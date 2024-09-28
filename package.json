@@ -1,0 +1,41 @@
+{
+  "name": "@hookdeck/eventcatalog-generator",
+  "version": "0.0.1",
+  "description": "Hookdeck Generator Plugin for Event Catalog",
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest",
+    "format": "prettier --write .",
+    "format:diff": "prettier --list-different .",
+    "generate": "ts-node scripts/generate.ts"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@types/minimist": "^1.2.5",
+    "@types/node": "^20.16.1",
+    "dotenv": "^16.4.5",
+    "prettier": "^3.3.3",
+    "ts-node": "^10.9.2",
+    "tsup": "^8.1.0",
+    "typescript": "^5.5.3",
+    "vitest": "^2.0.2"
+  },
+  "files": [
+    "dist",
+    "package.json"
+  ],
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@eventcatalog/sdk": "^0.0.12",
+    "@hookdeck/sdk": "^0.4.0",
+    "chalk": "^4",
+    "minimist": "^1.2.8"
+  }
+}
