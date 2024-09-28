@@ -2,80 +2,74 @@ import utils from '@eventcatalog/sdk';
 import chalk from 'chalk';
 import { generateVersion } from './lib';
 import { HookdeckClient } from '@hookdeck/sdk';
-import { Connection, Destination, Source } from '@hookdeck/sdk/api';
+import { Destination, Source } from '@hookdeck/sdk/api';
+import { createSchema } from 'genson-js';
+import pino from 'pino';
+import pretty from 'pino-pretty';
 
 // The event.catalog.js values for your plugin
 export type EventCatalogConfig = any;
 
 // Configuration the users give your catalog
 export type GeneratorProps = {
-  debug?: boolean;
+  logLevel?: pino.Level;
   projectDir?: string;
   hookdeckApiKey?: string;
   connectionSourcedMatch?: string;
 };
 
-let _debug = false;
-
-const logInfo = (...args: any[]) => {
-  console.info(chalk.blue.apply(chalk, args));
-};
-const logSuccess = (...args: any[]) => {
-  console.log(chalk.green.apply(chalk, args));
-};
-const logError = (...args: any[]) => {
-  console.log(chalk.red.apply(chalk, args));
-};
-const logDebug = (...args: any[]) => {
-  if (_debug) {
-    console.debug.apply(console, args);
-  }
-};
-
 export default async (config: EventCatalogConfig, options: GeneratorProps) => {
+  const stream = pretty();
+  const logger = pino(
+    {
+      level: options.logLevel || 'info',
+    },
+    stream
+  );
+
   const eventCatalogDirectory = options.projectDir || process.env.PROJECT_DIR;
   const hookdeckApiKey = options.hookdeckApiKey || process.env.HOOKDECK_PROJECT_API_KEY;
 
   if (!eventCatalogDirectory) {
     const msg = 'Please provide catalog url (env variable PROJECT_DIR)';
-    logError(msg);
+    logger.error(msg);
     throw new Error(msg);
   }
 
   if (!hookdeckApiKey) {
     const msg = 'Please provide Hookdeck Project API Key (env variable HOOKDECK_PROJECT_API_KEY)';
-    logError(msg);
+    logger.error(msg);
     throw new Error(msg);
   }
-
-  _debug = options.debug || false;
 
   const hookdeckClient = new HookdeckClient({ token: hookdeckApiKey });
 
   const connectionsResponse = await hookdeckClient.connection.list();
   if (connectionsResponse.models !== undefined && connectionsResponse.models.length === 0) {
-    logInfo('No connections found');
+    logger.info('No connections found');
     return;
   }
 
   let connections = connectionsResponse.models!;
   const connectionSourceMatch = options.connectionSourcedMatch ? new RegExp(options.connectionSourcedMatch) : undefined;
   if (connectionSourceMatch) {
-    logInfo(`Applying Connection Source Match: "${connectionSourceMatch}"`);
-    logDebug(connectionSourceMatch);
+    logger.info(`Applying Connection Source Match: "${connectionSourceMatch}"`);
+    logger.debug(connectionSourceMatch);
 
     connections = connections.filter((c) => {
       if (connectionSourceMatch && connectionSourceMatch.test(c.source.name) === false) {
-        logDebug(`Connection "${c.source.name}" does not match "${connectionSourceMatch}"`);
+        logger.debug(`Connection "${c.source.name}" does not match "${connectionSourceMatch}"`);
         return false;
       }
       return true;
     });
   }
 
-  logInfo(`Found ${connections.length} connections`);
-  logDebug(
-    `Generating Event Catalog for ${connections.length} Connections with Sources: \n${connections.map((c) => `- ${c.source.name}\n`)}`
+  logger.info(`Found ${connections.length} connections`);
+  logger.debug(
+    `Generating Event Catalog for ${connections.length} Connections with Sources: \n${connections
+      .map((c) => `- ${c.source.name}`)
+      .join('\n')}`
   );
 
   const sources: { [key: string]: Source } = {};
@@ -87,7 +81,7 @@ export default async (config: EventCatalogConfig, options: GeneratorProps) => {
   }
 
   // if (options.debug) {
-  //   logDebug('Exiting early due to debug flag');
+  //   logger.debug('Exiting early due to debug flag');
   //   return;
   // }
 
@@ -107,47 +101,96 @@ export default async (config: EventCatalogConfig, options: GeneratorProps) => {
         markdown: source.description || '',
       });
     } else {
-      logDebug(`Service for Source ${source.name} already exists`);
+      logger.debug(`Service for Source ${source.name} already exists`);
     }
 
     const requests = await hookdeckClient.request.list({ sourceId: source.id });
     if (requests.models) {
-      logDebug(`Found ${requests.models.length} Requests for Source ${source.id}`);
+      logger.debug(`Found ${requests.models.length} Requests for Source ${source.id}`);
 
       for (let i = 0; i < requests.models.length; ++i) {
         const request = requests.models[i];
 
-        // TODO: extract schema from request
-        // https://www.npmjs.com/package/genson-js
-        // TODO: determine a way to generate an ID for the event
+        const fullRequest = await hookdeckClient.request.retrieve(request.id);
+        let eventType = `${source.id}:${i}`;
+        let schema = undefined;
 
-        const eventId = `${source.id}:${i}`;
+        if (fullRequest.data) {
+          // Create schema
+          logger.trace(`Request ID: ${request.id}`, JSON.stringify(fullRequest.data));
+          try {
+            schema = createSchema(fullRequest.data.body);
+            logger.trace(`Schema for Request ID: ${request.id}`, JSON.stringify(schema));
+          } catch (e) {
+            logger.error(`Error generating schema for Request ID: ${request.id}`, e);
+          }
+
+          // Try to determine an event type
+          if (fullRequest.data.body && typeof fullRequest.data.body === 'object') {
+            if ('type' in fullRequest.data.body) {
+              eventType = fullRequest.data.body.type as string;
+            } else if ('eventType' in fullRequest.data.body) {
+              eventType = fullRequest.data.body.eventType as string;
+            } else {
+              logger.warn(`Could not determine event type. No 'type' or 'eventType' field found in Request ID: ${request.id}`);
+            }
+          }
+        } else {
+          logger.error(`fullRequest.data is undefined for request ID: ${request.id}`);
+        }
 
         const eventVersion = generateVersion(request.createdAt);
-        const existingEvent = await getEvent(eventId, eventVersion);
+        // TODO: apply areSchemasEqual logic from genson-js
+        const existingEvent = await getEvent(eventType, eventVersion);
         if (!existingEvent) {
+          // EventCatalog does not support "." in event IDs
+          const eventId = eventType.replace('.', ':');
           await writeEvent({
             id: eventId,
-            markdown: `Example:
-          ${JSON.stringify(request.data, null, 2)}`,
-            name: eventId,
+            markdown: `
+### Schema
+
+\`\`\`json
+${JSON.stringify(schema, null, 2)}
+\`\`\`
+
+### Example
+
+#### Body
+
+\`\`\`json
+${JSON.stringify(fullRequest.data?.body, null, 2)}
+\`\`\`
+
+#### Headers
+
+\`\`\`json
+${JSON.stringify(fullRequest.data?.headers, null, 2)}
+\`\`\`
+`,
+            name: eventType,
             version: eventVersion,
           });
 
-          await addEventToService(source.id, 'receives', {
+          await addEventToService(source.id, 'sends', {
             id: eventId,
             version: eventVersion,
           });
 
-          logDebug(`Written event for Request: ${JSON.stringify(request)}`);
+          logger.debug(`Written event for Request: ${JSON.stringify(request)}`);
         } else {
-          logDebug(`Event ${eventId} already exists`);
+          logger.debug(`Event ${eventType} already exists`);
         }
       }
     }
   }
 
-  logSuccess(`Created Services for ${Object.keys(sources).length} Sources`);
+  logger.info(chalk.green(`Created Services for ${Object.keys(sources).length} Sources`));
+
+  if (options.logLevel === 'trace') {
+    logger.debug('Exiting early due to trace flag');
+    return;
+  }
 
   // Create a Service for each Destination
   for (const destination of Object.values(destinations)) {
@@ -162,12 +205,12 @@ export default async (config: EventCatalogConfig, options: GeneratorProps) => {
         markdown: destination.description || '',
       });
     } else {
-      logDebug(`Service or Destination ${destination.name} already exists`);
+      logger.debug(`Service or Destination ${destination.name} already exists`);
     }
 
     const events = await hookdeckClient.event.list({ destinationId: destination.id });
     if (events.models) {
-      logDebug(`Found ${events.models.length} Events for Destination ${destination.id}`);
+      logger.debug(`Found ${events.models.length} Events for Destination ${destination.id}`);
 
       for (let i = 0; i < events.models.length; ++i) {
         const event = events.models[i];
@@ -193,13 +236,13 @@ export default async (config: EventCatalogConfig, options: GeneratorProps) => {
             version: eventVersion,
           });
 
-          logDebug(`Written event for Event: ${JSON.stringify(event)}`);
+          logger.debug(`Written event for Event: ${JSON.stringify(event)}`);
         } else {
-          logDebug(`Event ${eventId} already exists`);
+          logger.debug(`Event ${eventId} already exists`);
         }
       }
     }
   }
 
-  logSuccess(`Created Services for ${Object.keys(destinations).length} Destinations`);
+  logger.info(chalk.green(`Created Services for ${Object.keys(destinations).length} Destinations`));
 };

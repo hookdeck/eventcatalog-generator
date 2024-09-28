@@ -26,7 +26,7 @@ generators: [
     [
         "@hookdeck/eventcatalog-generator",
         {
-            debug: true,
+            logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace",
             connectionSourcedMatch: "regular expression string to match source names",
             hookdeckApiKey: "Hookdeck Project API Key. Hookdeck -> Project -> Settings -> Secrets"
         }
@@ -55,7 +55,7 @@ npm run generate -- {flags}
 
 Supported flags are:
 
-- `debug`: Output debug information to the console
+- `log-level`: The level to log at - "fatal" | "error" | "warn" | "info" | "debug" | "trace"
 - `match`: Regular expression match for Source names on Connections
 - `dir`: Path the the Event Catalog install directory
 - `api-key`: Hookdeck Project API Key

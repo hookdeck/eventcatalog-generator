@@ -36,6 +36,9 @@
     "@eventcatalog/sdk": "^0.0.12",
     "@hookdeck/sdk": "^0.4.0",
     "chalk": "^4",
-    "minimist": "^1.2.8"
+    "genson-js": "^0.0.8",
+    "minimist": "^1.2.8",
+    "pino": "^9.4.0",
+    "pino-pretty": "^11.2.2"
   }
 }
