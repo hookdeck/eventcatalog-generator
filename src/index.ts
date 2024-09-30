@@ -18,6 +18,8 @@ export type GeneratorProps = {
   connectionSourcedMatch?: string;
 };
 
+const EVENT_ID_SEPARATOR = '-';
+
 export default async (config: EventCatalogConfig, options: GeneratorProps) => {
   const stream = pretty();
   const logger = pino(
@@ -144,7 +146,7 @@ export default async (config: EventCatalogConfig, options: GeneratorProps) => {
         const existingEvent = await getEvent(eventType, eventVersion);
         if (!existingEvent) {
           // EventCatalog does not support "." in event IDs
-          const eventId = eventType.replace('.', ':');
+          const eventId = eventType.replace('.', EVENT_ID_SEPARATOR);
           await writeEvent({
             id: eventId,
             markdown: `
@@ -218,7 +220,7 @@ ${JSON.stringify(fullRequest.data?.headers, null, 2)}
         // TODO: extract schema from event
         // TODO: determine a way to generate an ID for the event
 
-        const eventId = `${event.id}:${i}`;
+        const eventId = `${event.id}${EVENT_ID_SEPARATOR}${i}`;
 
         const eventVersion = generateVersion(event.createdAt);
         const existingEvent = await getEvent(eventId, eventVersion);
