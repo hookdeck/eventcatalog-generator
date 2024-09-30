@@ -59,6 +59,13 @@ Supported flags are:
 - `match`: Regular expression match for Source names on Connections
 - `dir`: Path the the Event Catalog install directory
 - `api-key`: Hookdeck Project API Key
+- `max-events`: The maximum number of Requests/Events to process per Source/Destination
+
+Example:
+
+```sh
+npm run generate -- --log-level debug --match "stripe-production" --domain Payments
+```
 
 The `generate` script will also use the following environment variables:
 

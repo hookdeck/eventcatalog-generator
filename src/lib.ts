@@ -13,3 +13,7 @@ export function generateVersion(date?: Date) {
 
   return version;
 }
+
+export function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

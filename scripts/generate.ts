@@ -17,4 +17,6 @@ generator(config, {
   connectionSourcedMatch: args.match,
   projectDir: args.dir,
   hookdeckApiKey: args['api-key'],
+  domain: args.domain,
+  processMaxEvents: args['max-events'],
 });
