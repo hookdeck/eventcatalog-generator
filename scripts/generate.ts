@@ -13,8 +13,10 @@ if (args.debug) {
 }
 
 generator(config, {
-  debug: args.debug,
+  logLevel: args['log-level'],
   connectionSourcedMatch: args.match,
   projectDir: args.dir,
   hookdeckApiKey: args['api-key'],
+  domain: args.domain,
+  processMaxEvents: args['max-events'],
 });
