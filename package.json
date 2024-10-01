@@ -8,10 +8,10 @@
     "format": "prettier --write .",
     "format:diff": "prettier --list-different .",
     "generate": "ts-node scripts/generate.ts",
-    "prepublish:beta": "npm run build",
-    "prepublish": "npm run build",
-    "publish:beta": "npm publish --tag beta --public",
-    "publish": "npm publish --public"
+    "prerelease:beta": "npm run build",
+    "prerelease": "npm run build",
+    "release:beta": "npm publish --tag beta --public",
+    "release": "npm publish --public"
   },
   "bin": {
     "generate": "dist/scripts/generate.js"
