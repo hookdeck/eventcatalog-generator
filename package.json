@@ -12,7 +12,7 @@
     "publish:beta": "npm publish --tag beta --public"
   },
   "bin": {
-    "generate": "./dist/scripts/generate.js"
+    "generate": "dist/scripts/generate.js"
   },
   "publishConfig": {
     "access": "public"
