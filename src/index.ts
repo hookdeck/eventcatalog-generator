@@ -75,12 +75,10 @@ class Generator {
   }
 
   async generate() {
-    const { config, options } = this;
+    const { options } = this;
 
     // EventCatalog SDK (https://www.eventcatalog.dev/docs/sdk)
-    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain, writeDomain } = utils(
-      this.eventCatalogDirectory
-    );
+    const { writeDomain } = utils(this.eventCatalogDirectory);
 
     if (options.domain) {
       writeDomain({
@@ -138,7 +136,7 @@ class Generator {
   }
 
   private async processDestinations(destinations: { [key: string]: Destination }) {
-    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain, writeDomain } = utils(
+    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain } = utils(
       this.eventCatalogDirectory
     );
     for (const destination of Object.values(destinations)) {
