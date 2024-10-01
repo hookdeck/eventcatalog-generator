@@ -8,7 +8,7 @@ export function generateVersion(date?: Date) {
   const generateTime = date ?? new Date();
 
   const dateVersionMinor = `${generateTime.getFullYear()}${VERSION_SEPARATOR}${pad(generateTime.getMonth() + 1)}${pad(generateTime.getDate())}`;
-  const dateVersionPatch = `${pad(generateTime.getHours())}${pad(generateTime.getMinutes())}${pad(generateTime.getSeconds())}`;
+  const dateVersionPatch = `${generateTime.getHours()}${pad(generateTime.getMinutes())}${pad(generateTime.getSeconds())}`;
   const version = `0.${dateVersionMinor}.${dateVersionPatch}`;
 
   return version;
