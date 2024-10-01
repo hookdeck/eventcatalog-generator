@@ -7,7 +7,8 @@
     "test": "vitest",
     "format": "prettier --write .",
     "format:diff": "prettier --list-different .",
-    "generate": "ts-node scripts/generate.ts"
+    "generate": "ts-node scripts/generate.ts",
+    "publish:beta": "npm publish --tag beta --public"
   },
   "bin": {
     "generate": "./dist/scripts/generate.js"
