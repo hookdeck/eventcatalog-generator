@@ -27,7 +27,7 @@ npx @hookdeck/eventcatalog-generator \
     --api-key {HOOKDECK_API_KEY} \
     --log-level debug \
     --match "stripe-production" \
-    --domain Payments
+    --domain Payments \
     --max-events 200
 ```
 
