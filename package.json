@@ -1,6 +1,6 @@
 {
   "name": "@hookdeck/eventcatalog-generator",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "Hookdeck Generator Plugin for Event Catalog",
   "scripts": {
     "build": "tsup",
@@ -8,6 +8,7 @@
     "format": "prettier --write .",
     "format:diff": "prettier --list-different .",
     "generate": "ts-node scripts/generate.ts",
+    "pre-publish": "npm run build",
     "publish:beta": "npm publish --tag beta --public"
   },
   "bin": {
