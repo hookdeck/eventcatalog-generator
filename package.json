@@ -43,9 +43,9 @@
     "dist",
     "package.json"
   ],
-  "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "main": "./dist/src/index.js",
+  "module": "./dist/src/index.mjs",
+  "types": "./dist/src/index.d.ts",
   "dependencies": {
     "@eventcatalog/sdk": "^0.0.12",
     "@hookdeck/sdk": "^0.4.0",
