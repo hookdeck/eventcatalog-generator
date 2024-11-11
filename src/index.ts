@@ -135,8 +135,153 @@ class Generator {
     await this.processDestinations(destinations);
   }
 
+  private async processSources(sources: { [key: string]: Source }) {
+    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain, addSchemaToEvent } = utils(
+      this.eventCatalogDirectory
+    );
+
+    for (const source of Object.values(sources)) {
+      // const serviceVersion = generateVersion(source.updatedAt);
+      const serviceVersion = generateVersion(this.generationRunDate);
+      const existingSourceService = await getService(source.id, serviceVersion);
+
+      if (!existingSourceService) {
+        // Create a Service for each Destination
+        await writeService({
+          id: source.id,
+          name: source.name,
+          version: serviceVersion,
+          markdown: source.description || '',
+        });
+
+        if (this.options.domain) {
+          await addServiceToDomain(this.options.domain, {
+            id: source.id,
+            version: serviceVersion,
+          });
+        }
+      } else {
+        this.logger.debug(`Service for Source ${source.name} already exists`);
+      }
+
+      let nextRequest = undefined;
+      let requestIteration = 1;
+      const processedRequests = new Map<string, boolean>();
+      do {
+        const requests = await this.hookdeckClient.request.list({ sourceId: source.id, next: nextRequest });
+        if (requests.models) {
+          this.logger.debug(`Found ${requests.models.length} Requests for Source ${source.id}`);
+
+          for (let i = 0; i < requests.models.length; ++i) {
+            const request = requests.models[i];
+
+            if (processedRequests.has(request.id)) {
+              throw new Error(`Request ID ${request.id} has already been processed`);
+            }
+            processedRequests.set(request.id, true);
+
+            // Try to avoid rate limiting
+            await sleep(SLEEP_TIME);
+
+            const fullRequest = await this.hookdeckClient.request.retrieve(request.id, { maxRetries: 1 });
+            let eventType = `${source.id}:${i}`;
+            let schema: Schema | undefined = undefined;
+
+            if (fullRequest.data) {
+              // Create schema
+              this.logger.debug(
+                `Processing Request ID "${request.id}". ${i + 1} of ${requests.models.length}. Iteration: ${requestIteration}. Processed ${processedRequests.size} of a maximum ${this.processMaxEvents} requests.`
+              );
+              this.logger.trace(`Request ID: ${request.id} %s`, JSON.stringify(fullRequest.data));
+              try {
+                schema = createSchema(fullRequest.data.body);
+                this.logger.trace(`Schema for Request ID: ${request.id} %s`, JSON.stringify(schema));
+              } catch (e) {
+                this.logger.error(`Error generating schema for Request ID: ${request.id} %s`, e);
+              }
+
+              // Try to determine an event type
+              if (fullRequest.data.body && typeof fullRequest.data.body === 'object') {
+                if ('type' in fullRequest.data.body) {
+                  eventType = fullRequest.data.body.type as string;
+                } else if ('eventType' in fullRequest.data.body) {
+                  eventType = fullRequest.data.body.eventType as string;
+                } else {
+                  this.logger.warn(
+                    `Could not determine event type. No 'type' or 'eventType' field found in Request ID: ${request.id}`
+                  );
+                }
+              }
+            } else {
+              this.logger.error(`fullRequest.data is undefined for request ID: ${request.id}`);
+              throw new Error(`fullRequest.data is undefined for request ID: ${request.id}`);
+            }
+
+            // const eventVersion = generateVersion(request.createdAt);
+            const eventVersion = generateVersion(this.generationRunDate);
+            const existingEvent = await getEvent(eventType, eventVersion);
+
+            // EventCatalog does not support "." in event IDs
+            const eventId = eventType.replace('.', EVENT_ID_SEPARATOR);
+
+            if (!existingEvent) {
+              await writeEvent({
+                id: eventId,
+                schemaPath: 'schema.json',
+                markdown: `
+### Schema
+
+<SchemaViewer file="schema.json" title="JSON Schema" maxHeight="500" />
+
+### Example
+
+#### Body
+
+\`\`\`json
+${JSON.stringify(fullRequest.data?.body, null, 2)}
+\`\`\`
+
+#### Headers
+
+\`\`\`json
+${JSON.stringify(fullRequest.data?.headers, null, 2)}
+\`\`\`
+
+### Meta
+
+Request ID: ${fullRequest.id}
+`,
+                name: eventType,
+                version: eventVersion,
+              });
+
+              this.logger.debug(`Written event for Request: ${JSON.stringify(request)}`);
+
+              if (schema) {
+                await addSchemaToEvent(eventId, { schema: JSON.stringify(schema, null, 2), fileName: 'schema.json' });
+              }
+
+              this.logger.trace(`Registered eventType ${eventType} for service ${source.name} for Request ID: ${request.id}`);
+            } else {
+              this.logger.debug(`Event ${eventType} already exists`);
+            }
+
+            await addEventToService(source.id, 'sends', {
+              id: eventId,
+              version: eventVersion,
+            });
+          }
+        }
+        nextRequest = requests.pagination?.next;
+        ++requestIteration;
+      } while (processedRequests.size < this.processMaxEvents && nextRequest !== undefined);
+    }
+
+    this.logger.info(chalk.green(`Created Services for ${Object.keys(sources).length} Sources`));
+  }
+
   private async processDestinations(destinations: { [key: string]: Destination }) {
-    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain } = utils(
+    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain, addSchemaToEvent } = utils(
       this.eventCatalogDirectory
     );
     for (const destination of Object.values(destinations)) {
@@ -229,9 +374,7 @@ class Generator {
                 markdown: `
 ### Schema
 
-\`\`\`json
-${JSON.stringify(schema, null, 2)}
-\`\`\`
+<SchemaViewer file="schema.json" title="JSON Schema" maxHeight="500" />
 
 ### Example
 
@@ -256,6 +399,12 @@ Event ID: ${fullEvent.id}
               });
 
               this.logger.debug(`Written event for Event: ${JSON.stringify(fullEvent)}`);
+
+              if (schema) {
+                await addSchemaToEvent(eventId, { schema: JSON.stringify(schema, null, 2), fileName: 'schema.json' });
+              }
+
+              this.logger.trace(`Registered eventType ${eventType} for service ${destination.name} for Event ID: ${event.id}`);
             } else {
               this.logger.debug(`Event ${eventType} already exists`);
             }
@@ -264,8 +413,6 @@ Event ID: ${fullEvent.id}
               id: eventId,
               version: eventVersion,
             });
-
-            this.logger.trace(`Registered eventType ${eventType} for service ${destination.name} for Event ID: ${event.id}`);
           }
         }
 
@@ -275,148 +422,6 @@ Event ID: ${fullEvent.id}
     }
 
     this.logger.info(chalk.green(`Created Services for ${Object.keys(destinations).length} Destinations`));
-  }
-
-  private async processSources(sources: { [key: string]: Source }) {
-    const { writeService, getService, writeEvent, getEvent, addEventToService, addServiceToDomain } = utils(
-      this.eventCatalogDirectory
-    );
-
-    for (const source of Object.values(sources)) {
-      // const serviceVersion = generateVersion(source.updatedAt);
-      const serviceVersion = generateVersion(this.generationRunDate);
-      const existingSourceService = await getService(source.id, serviceVersion);
-
-      if (!existingSourceService) {
-        // Create a Service for each Destination
-        await writeService({
-          id: source.id,
-          name: source.name,
-          version: serviceVersion,
-          markdown: source.description || '',
-        });
-
-        if (this.options.domain) {
-          await addServiceToDomain(this.options.domain, {
-            id: source.id,
-            version: serviceVersion,
-          });
-        }
-      } else {
-        this.logger.debug(`Service for Source ${source.name} already exists`);
-      }
-
-      let nextRequest = undefined;
-      let requestIteration = 1;
-      const processedRequests = new Map<string, boolean>();
-      do {
-        const requests = await this.hookdeckClient.request.list({ sourceId: source.id, next: nextRequest });
-        if (requests.models) {
-          this.logger.debug(`Found ${requests.models.length} Requests for Source ${source.id}`);
-
-          for (let i = 0; i < requests.models.length; ++i) {
-            const request = requests.models[i];
-
-            if (processedRequests.has(request.id)) {
-              throw new Error(`Request ID ${request.id} has already been processed`);
-            }
-            processedRequests.set(request.id, true);
-
-            // Try to avoid rate limiting
-            await sleep(SLEEP_TIME);
-
-            const fullRequest = await this.hookdeckClient.request.retrieve(request.id, { maxRetries: 1 });
-            let eventType = `${source.id}:${i}`;
-            let schema: Schema | undefined = undefined;
-
-            if (fullRequest.data) {
-              // Create schema
-              this.logger.debug(
-                `Processing Request ID "${request.id}". ${i + 1} of ${requests.models.length}. Iteration: ${requestIteration}. Processed ${processedRequests.size} of a maximum ${this.processMaxEvents} requests.`
-              );
-              this.logger.trace(`Request ID: ${request.id} %s`, JSON.stringify(fullRequest.data));
-              try {
-                schema = createSchema(fullRequest.data.body);
-                this.logger.trace(`Schema for Request ID: ${request.id} %s`, JSON.stringify(schema));
-              } catch (e) {
-                this.logger.error(`Error generating schema for Request ID: ${request.id} %s`, e);
-              }
-
-              // Try to determine an event type
-              if (fullRequest.data.body && typeof fullRequest.data.body === 'object') {
-                if ('type' in fullRequest.data.body) {
-                  eventType = fullRequest.data.body.type as string;
-                } else if ('eventType' in fullRequest.data.body) {
-                  eventType = fullRequest.data.body.eventType as string;
-                } else {
-                  this.logger.warn(
-                    `Could not determine event type. No 'type' or 'eventType' field found in Request ID: ${request.id}`
-                  );
-                }
-              }
-            } else {
-              this.logger.error(`fullRequest.data is undefined for request ID: ${request.id}`);
-              throw new Error(`fullRequest.data is undefined for request ID: ${request.id}`);
-            }
-
-            // const eventVersion = generateVersion(request.createdAt);
-            const eventVersion = generateVersion(this.generationRunDate);
-            const existingEvent = await getEvent(eventType, eventVersion);
-
-            // EventCatalog does not support "." in event IDs
-            const eventId = eventType.replace('.', EVENT_ID_SEPARATOR);
-
-            if (!existingEvent) {
-              await writeEvent({
-                id: eventId,
-                markdown: `
-### Schema
-
-\`\`\`json
-${JSON.stringify(schema, null, 2)}
-\`\`\`
-
-### Example
-
-#### Body
-
-\`\`\`json
-${JSON.stringify(fullRequest.data?.body, null, 2)}
-\`\`\`
-
-#### Headers
-
-\`\`\`json
-${JSON.stringify(fullRequest.data?.headers, null, 2)}
-\`\`\`
-
-### Meta
-
-Request ID: ${fullRequest.id}
-`,
-                name: eventType,
-                version: eventVersion,
-              });
-
-              this.logger.debug(`Written event for Request: ${JSON.stringify(request)}`);
-
-              await addEventToService(source.id, 'sends', {
-                id: eventId,
-                version: eventVersion,
-              });
-
-              this.logger.trace(`Registered eventType ${eventType} for service ${source.name} for Request ID: ${request.id}`);
-            } else {
-              this.logger.debug(`Event ${eventType} already exists`);
-            }
-          }
-        }
-        nextRequest = requests.pagination?.next;
-        ++requestIteration;
-      } while (processedRequests.size < this.processMaxEvents && nextRequest !== undefined);
-    }
-
-    this.logger.info(chalk.green(`Created Services for ${Object.keys(sources).length} Sources`));
   }
 }
 

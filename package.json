@@ -1,6 +1,6 @@
 {
   "name": "@hookdeck/eventcatalog-generator",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Hookdeck Generator Plugin for Event Catalog",
   "scripts": {
     "build": "tsup",
